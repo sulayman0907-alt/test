@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="ug" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ھاۋا بوشلۇقى كۆزىتىش سىستېمىسى - Airspace & Space Observatory</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome for Aerospace HUD Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts for Uyghur Arabic Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;600;700;900&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030712;
+            font-family: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+            color: #e2e8f0;
+        }
+        .font-mono-hud {
+            font-family: 'Orbitron', monospace, 'Noto Sans Arabic';
+        }
+        /* Custom Glowing Glassmorphism */
+        .glass-panel {
+            background: rgba(10, 20, 38, 0.72);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.55), inset 0 0 12px rgba(56, 189, 248, 0.08);
+        }
+        .glass-panel-active {
+            border-color: rgba(34, 211, 238, 0.6);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+        }
+        /* Radar Sweep Animation */
+        .radar-grid {
+            background-image: 
+                radial-gradient(circle, rgba(56, 189, 248, 0.12) 1px, transparent 1px),
+                linear-gradient(to right, rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .radar-sweep-beam {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, rgba(6, 182, 212, 0.45) 0deg, rgba(6, 182, 212, 0.08) 55deg, transparent 75deg);
+            animation: radarSpin 4.5s linear infinite;
+        }
+        @keyframes radarSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        /* Pulse Animation */
+        .glow-pulse {
+            animation: glowAnim 2.2s ease-in-out infinite alternate;
+        }
+        @keyframes glowAnim {
+            0% { box-shadow: 0 0 5px rgba(6, 182, 212, 0.4); }
+            100% { box-shadow: 0 0 22px rgba(6, 182, 212, 0.85); }
+        }
+        /* Custom Scrollbar for HUD */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(3, 7, 18, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.35);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(56, 189, 248, 0.7);
+        }
+        /* Range slider styling */
+        input[type=range] {
+            accent-color: #06b6d4;
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden select-none">
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing z-0"></div>
+
+    <!-- HUD Overlay Top Bar -->
+    <header class="absolute top-0 inset-x-0 z-20 p-4 pointer-events-none flex justify-between items-center">
+        <!-- System Title & Status -->
+        <div class="pointer-events-auto glass-panel rounded-2xl px-5 py-3 flex items-center space-x-4 space-x-reverse">
+            <div class="relative w-11 h-11 rounded-xl bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center glow-pulse text-cyan-300">
+                <i class="fa-solid fa-satellite-dish text-xl"></i>
+                <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg md:text-xl font-black text-cyan-300 tracking-wider">ھاۋا بوشلۇقى كۆزىتىش سۇپىسى</h1>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono-hud">AERO-SPACE V3.2</span>
+                </div>
+                <p class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                    <span>قەرەللىك كۆزىتىش ھالىتى: پائال</span>
+                    <span class="inline-block w-1 h-1 rounded-full bg-cyan-400"></span>
+                    <span class="font-mono-hud text-[11px] text-cyan-400" id="utc-clock">00:00:00 UTC</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Quick Telemetry & Audio Toggle -->
+        <div class="pointer-events-auto flex items-center gap-2">
+            <!-- Audio Toggle Button -->
+            <button id="btn-audio" onclick="toggleAudio()" title="ئاۋازنى ئېچىش / تاقاش" class="glass-panel p-3 rounded-xl hover:border-cyan-400 text-cyan-400 transition-all flex items-center gap-2">
+                <i id="audio-icon" class="fa-solid fa-volume-xmark text-lg"></i>
+                <span class="text-xs hidden sm:inline" id="audio-label">رادار ئاۋازى: تاقاق</span>
+            </button>
+
+            <!-- Reset Camera Button -->
+            <button onclick="resetCamera()" title="كۆرۈنۈشنى ئەسلىگە كەلتۈرۈش" class="glass-panel p-3 rounded-xl hover:border-cyan-400 text-cyan-400 transition-all flex items-center gap-2">
+                <i class="fa-solid fa-compass text-lg"></i>
+                <span class="text-xs hidden sm:inline">ئەسلى كۆرۈنۈش</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Right Sidebar: Atmospheric Layers Inspector -->
+    <aside class="absolute top-24 right-4 z-20 w-80 max-h-[calc(100vh-120px)] flex flex-col gap-3 pointer-events-none">
+        <!-- Layer Controller Panel -->
+        <div class="glass-panel rounded-2xl p-4 pointer-events-auto flex flex-col gap-3 overflow-y-auto max-h-full">
+            <div class="flex items-center justify-between border-b border-cyan-500/20 pb-2">
+                <div class="flex items-center gap-2 text-cyan-300">
+                    <i class="fa-solid fa-layer-group text-sm"></i>
+                    <h2 class="text-sm font-bold">ھاۋا بوشلۇقى قەۋەتلىرى</h2>
+                </div>
+                <span class="text-[11px] text-slate-400 font-mono-hud">5 LAYERS</span>
+            </div>
+
+            <!-- Layer List -->
+            <div class="space-y-2 text-xs" id="layers-container">
+                <!-- Layers populated via JS -->
+            </div>
+
+            <!-- Atmospheric Phenomena Toggles -->
+            <div class="border-t border-cyan-500/20 pt-3">
+                <h3 class="text-xs font-bold text-cyan-300 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    ھاۋا ۋە بوشلۇق ھادىسىلىرى
+                </h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="toggle-aurora" onclick="togglePhenomenon('aurora')" class="glass-panel px-2.5 py-2 rounded-xl text-slate-300 hover:text-cyan-300 flex items-center justify-between transition-colors border-emerald-500/40 bg-emerald-950/20">
+                        <span>قۇتۇپ نۇرى</span>
+                        <i class="fa-solid fa-check text-emerald-400 text-[10px]"></i>
+                    </button>
+                    <button id="toggle-meteors" onclick="togglePhenomenon('meteors')" class="glass-panel px-2.5 py-2 rounded-xl text-slate-300 hover:text-cyan-300 flex items-center justify-between transition-colors border-emerald-500/40 bg-emerald-950/20">
+                        <span>مېتېئور يامغۇرى</span>
+                        <i class="fa-solid fa-check text-emerald-400 text-[10px]"></i>
+                    </button>
+                    <button id="toggle-clouds" onclick="togglePhenomenon('clouds')" class="glass-panel px-2.5 py-2 rounded-xl text-slate-300 hover:text-cyan-300 flex items-center justify-between transition-colors border-emerald-500/40 bg-emerald-950/20">
+                        <span>قويۇق بۇلۇتلار</span>
+                        <i class="fa-solid fa-check text-emerald-400 text-[10px]"></i>
+                    </button>
+                    <button id="toggle-orbits" onclick="togglePhenomenon('orbits')" class="glass-panel px-2.5 py-2 rounded-xl text-slate-300 hover:text-cyan-300 flex items-center justify-between transition-colors border-emerald-500/40 bg-emerald-950/20">
+                        <span>ئوربىتا يولى</span>
+                        <i class="fa-solid fa-check text-emerald-400 text-[10px]"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Time of Day / Sun Lighting Control -->
+            <div class="border-t border-cyan-500/20 pt-3">
+                <div class="flex items-center justify-between text-xs mb-1.5">
+                    <span class="text-cyan-300 font-semibold flex items-center gap-1.5">
+                        <i class="fa-solid fa-sun text-amber-400"></i>
+                        قۇياش يورۇقلۇقى (كۈندۈز/كېچە)
+                    </span>
+                    <span id="sun-time-label" class="font-mono-hud text-slate-400 text-[11px]">12:00 كۈندۈز</span>
+                </div>
+                <input id="sun-slider" type="range" min="0" max="360" value="75" oninput="updateSunAngle(this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+            </div>
+        </div>
+    </aside>
+
+    <!-- Left Sidebar: Radar & Live Airspace Dashboard -->
+    <aside class="absolute top-24 left-4 z-20 w-84 max-h-[calc(100vh-120px)] flex flex-col gap-3 pointer-events-none">
+        
+        <!-- Live Radar Sweep Mini-Widget -->
+        <div class="glass-panel rounded-2xl p-4 pointer-events-auto">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2 text-cyan-300">
+                    <i class="fa-solid fa-crosshairs text-sm"></i>
+                    <h2 class="text-sm font-bold">بوشلۇق رادارى (Radar HUD)</h2>
+                </div>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-500/30 font-mono-hud">SCANNING</span>
+            </div>
+
+            <!-- Radar Display -->
+            <div class="relative w-full aspect-square max-w-[210px] mx-auto rounded-full border border-cyan-500/40 overflow-hidden radar-grid flex items-center justify-center my-2">
+                <!-- Concentric Rings -->
+                <div class="absolute w-3/4 h-3/4 rounded-full border border-cyan-500/25"></div>
+                <div class="absolute w-1/2 h-1/2 rounded-full border border-cyan-500/30"></div>
+                <div class="absolute w-1/4 h-1/4 rounded-full border border-cyan-500/40"></div>
+                <!-- Crosshairs -->
+                <div class="absolute inset-x-0 top-1/2 h-px bg-cyan-500/30"></div>
+                <div class="absolute inset-y-0 left-1/2 w-px bg-cyan-500/30"></div>
+                <!-- Radar Beam -->
+                <div class="radar-sweep-beam"></div>
+                <!-- Center Blip -->
+                <div class="w-2 h-2 rounded-full bg-cyan-400 z-10 shadow-[0_0_8px_#22d3ee]"></div>
+                <!-- Mini radar target blips -->
+                <div id="radar-blips-container" class="absolute inset-0 pointer-events-none"></div>
+            </div>
+
+            <!-- Flight Telemetry Stats -->
+            <div class="grid grid-cols-3 gap-2 text-center text-[11px] mt-2 border-t border-cyan-500/20 pt-2 font-mono-hud">
+                <div class="p-1.5 rounded-lg bg-slate-900/50">
+                    <div class="text-cyan-400 text-sm font-bold" id="stat-flights">14</div>
+                    <div class="text-[10px] text-slate-400 font-sans">ئايروپىلان</div>
+                </div>
+                <div class="p-1.5 rounded-lg bg-slate-900/50">
+                    <div class="text-emerald-400 text-sm font-bold" id="stat-satellites">8</div>
+                    <div class="text-[10px] text-slate-400 font-sans">سۈنئىي ھەمراھ</div>
+                </div>
+                <div class="p-1.5 rounded-lg bg-slate-900/50">
+                    <div class="text-amber-400 text-sm font-bold" id="stat-stations">1</div>
+                    <div class="text-[10px] text-slate-400 font-sans">ئالەم پونكىتى</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Target Details Modal / Selected Object Card -->
+        <div id="target-details-card" class="glass-panel glass-panel-active rounded-2xl p-4 pointer-events-auto transition-all">
+            <div class="flex items-center justify-between border-b border-cyan-500/30 pb-2">
+                <div class="flex items-center gap-2">
+                    <span id="target-icon-wrap" class="w-7 h-7 rounded-lg bg-cyan-900/60 flex items-center justify-center text-cyan-300">
+                        <i class="fa-solid fa-plane"></i>
+                    </span>
+                    <div>
+                        <div id="target-name" class="font-bold text-sm text-cyan-200">Boeing 787-9 (قەرەللىك پەرۋاز)</div>
+                        <div id="target-layer" class="text-[10px] text-cyan-400/80">تۆۋەنكى ھاۋا قەۋىتى (Troposphere)</div>
+                    </div>
+                </div>
+                <span id="target-badge" class="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-500/40 font-mono-hud">CIVIL</span>
+            </div>
+
+            <!-- Target Specs -->
+            <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span class="text-slate-400 block text-[10px]">ئېگىزلىكى (Altitude):</span>
+                    <span id="target-alt" class="text-cyan-300 font-bold font-mono-hud">10,800 m</span>
+                </div>
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span class="text-slate-400 block text-[10px]">سۈرئىتى (Velocity):</span>
+                    <span id="target-spd" class="text-cyan-300 font-bold font-mono-hud">890 km/h</span>
+                </div>
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span class="text-slate-400 block text-[10px]">كوردىناتى (Coords):</span>
+                    <span id="target-coords" class="text-cyan-300 font-bold font-mono-hud text-[11px]">39.9°N, 116.4°E</span>
+                </div>
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span class="text-slate-400 block text-[10px]">ھالىتى (Status):</span>
+                    <span id="target-status" class="text-emerald-400 font-bold text-[11px]">نورمال پەرۋازدا</span>
+                </div>
+            </div>
+
+            <!-- Action: Focus Object -->
+            <button onclick="focusSelectedObject()" class="mt-3 w-full py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold flex items-center justify-center gap-2 transition-colors">
+                <i class="fa-solid fa-crosshairs"></i>
+                نشانغا يېقىنلىشىش (Focus Camera)
+            </button>
+        </div>
+
+    </aside>
+
+    <!-- Bottom Controls & Layer Scale Gauge -->
+    <div class="absolute bottom-4 inset-x-4 z-20 pointer-events-none flex flex-col md:flex-row items-center justify-between gap-3">
+        <!-- Quick Altitude Scale Strip -->
+        <div class="pointer-events-auto glass-panel rounded-2xl px-4 py-2.5 flex items-center gap-4 overflow-x-auto max-w-full text-xs">
+            <span class="text-cyan-300 font-bold whitespace-nowrap flex items-center gap-1.5">
+                <i class="fa-solid fa-arrows-up-down"></i>
+                ئېگىزلىك كۆرسەتكۈچى:
+            </span>
+            <div class="flex items-center gap-2 text-[11px]">
+                <button onclick="zoomToAltitude(1.08)" class="px-2 py-1 rounded-lg bg-sky-950/60 hover:bg-sky-900/70 border border-sky-500/30 text-sky-300">تۆۋەنكى (0-12 km)</button>
+                <button onclick="zoomToAltitude(1.22)" class="px-2 py-1 rounded-lg bg-blue-950/60 hover:bg-blue-900/70 border border-blue-500/30 text-blue-300">ستراتوسفېرا (12-50 km)</button>
+                <button onclick="zoomToAltitude(1.36)" class="px-2 py-1 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/70 border border-indigo-500/30 text-indigo-300">ئوتتۇرا قەۋەت (50-85 km)</button>
+                <button onclick="zoomToAltitude(1.55)" class="px-2 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-purple-300">ئىسسىقلىق (85-600 km)</button>
+                <button onclick="zoomToAltitude(1.85)" class="px-2 py-1 rounded-lg bg-pink-950/60 hover:bg-pink-900/70 border border-pink-500/30 text-pink-300">تاشقى بوشلۇق (600+ km)</button>
+            </div>
+        </div>
+
+        <!-- Help & Instructions tooltip -->
+        <div class="pointer-events-auto glass-panel rounded-2xl px-3 py-2 text-slate-300 text-[11px] flex items-center gap-2">
+            <i class="fa-solid fa-circle-info text-cyan-400"></i>
+            <span>مائۇسنى سۆرەپ يەر شارىنى ئايلاندۇرۇڭ | ئوبيېكتلارنى چېكىپ تەپسىلاتىنى كۆرۈڭ</span>
+        </div>
+    </div>
+
+    <!-- MAIN SIMULATION JAVASCRIPT -->
+    <script>
+        // --- 1. Sound System (Web Audio API) ---
+        let audioCtx = null;
+        let soundEnabled = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playRadarBeep(freq = 880, duration = 0.08) {
+            if (!soundEnabled || !audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function playSelectionSound() {
+            if (!soundEnabled || !audioCtx) return;
+            try {
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(540, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.12);
+                gain.gain.setValueAtTime(0.06, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(now + 0.12);
+            } catch (e) {}
+        }
+
+        function toggleAudio() {
+            initAudio();
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('audio-icon');
+            const label = document.getElementById('audio-label');
+            if (soundEnabled) {
+                icon.className = 'fa-solid fa-volume-high text-lg text-emerald-400';
+                label.innerText = 'رادار ئاۋازى: ئوچۇق';
+                playRadarBeep(920, 0.15);
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-lg text-cyan-400';
+                label.innerText = 'رادار ئاۋازى: تاقاق';
+            }
+        }
+
+        // --- 2. Atmospheric Layers Data ---
+        const ATMOSPHERE_LAYERS = [
+            {
+                id: 'troposphere',
+                name: 'تۆۋەنكى ھاۋا قەۋىتى',
+                engName: 'Troposphere',
+                altitude: '0 - 12 km',
+                desc: 'بارلىق ھاۋارايى ھادىسىلىرى، يولۇچىلار ئايروپىلانى ۋە بۇلۇتلار مەۋجۇت.',
+                color: 0x38bdf8,
+                opacity: 0.18,
+                radiusScale: 1.05,
+                visible: true,
+                badgeColor: 'bg-sky-500'
+            },
+            {
+                id: 'stratosphere',
+                name: 'ستراتوسفېرا قەۋىتى',
+                engName: 'Stratosphere',
+                altitude: '12 - 50 km',
+                desc: 'ئوزون قەۋىتى بار، ھاۋارايى شارلىرى ۋە ئاۋازدىن تېز ئايروپىلانلار ئۇچىدۇ.',
+                color: 0x3b82f6,
+                opacity: 0.14,
+                radiusScale: 1.18,
+                visible: true,
+                badgeColor: 'bg-blue-600'
+            },
+            {
+                id: 'mesosphere',
+                name: 'ئوتتۇرا قەۋەت (مېزوسفېرا)',
+                engName: 'Mesosphere',
+                altitude: '50 - 85 km',
+                desc: 'ئەڭ سوغۇق قەۋەت (-90°C)، يەرگە چۈشكەن مېتېئورلار كۆيۈپ تۈگەيدۇ.',
+                color: 0x6366f1,
+                opacity: 0.12,
+                radiusScale: 1.34,
+                visible: true,
+                badgeColor: 'bg-indigo-600'
+            },
+            {
+                id: 'thermosphere',
+                name: 'ئىسسىقلىق قەۋىتى (تېرموسفېرا)',
+                engName: 'Thermosphere',
+                altitude: '85 - 600 km',
+                desc: 'قۇتۇپ نۇرى (Aurora) ھاسىل بولىدۇ ۋە خەلقئارا ئالەم پونكىتى (ISS) ماڭىدۇ.',
+                color: 0xa855f7,
+                opacity: 0.10,
+                radiusScale: 1.55,
+                visible: true,
+                badgeColor: 'bg-purple-600'
+            },
+            {
+                id: 'exosphere',
+                name: 'تاشقى بوشلۇق قەۋىتى (ئېكزوسفېرا)',
+                engName: 'Exosphere',
+                altitude: '600+ km',
+                desc: 'ئاتموسفېرانىڭ ئەڭ سىرتقى چېكى، ئالاقە سۈنئىي ھەمراھلىرى ماكانلاشقان.',
+                color: 0xec4899,
+                opacity: 0.08,
+                radiusScale: 1.82,
+                visible: true,
+                badgeColor: 'bg-pink-600'
+            }
+        ];
+
+        // --- 3. Three.js Scene Setup ---
+        let scene, camera, renderer, controls;
+        let earthMesh, atmosphereGroup, cloudsMesh, auroraMesh, meteorsGroup, objectsGroup, orbitPathsGroup;
+        let sunLight, ambientLight;
+        const EARTH_RADIUS = 10;
+        const trackedObjects = [];
+        let selectedObject = null;
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x030712, 0.003);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            camera.position.set(0, 18, 38);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            container.appendChild(renderer.domElement);
+
+            // OrbitControls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 12.5;
+            controls.maxDistance = 85;
+            controls.enablePan = false;
+            controls.rotateSpeed = 0.6;
+
+            // Lights
+            ambientLight = new THREE.AmbientLight(0x223344, 0.8);
+            scene.add(ambientLight);
+
+            sunLight = new THREE.DirectionalLight(0xfffaed, 2.2);
+            sunLight.position.set(40, 10, 30);
+            scene.add(sunLight);
+
+            // Groups
+            atmosphereGroup = new THREE.Group();
+            objectsGroup = new THREE.Group();
+            orbitPathsGroup = new THREE.Group();
+            meteorsGroup = new THREE.Group();
+
+            scene.add(atmosphereGroup);
+            scene.add(orbitPathsGroup);
+            scene.add(objectsGroup);
+            scene.add(meteorsGroup);
+
+            // Build Procedural Assets
+            createStarfield();
+            createEarth();
+            createAtmosphereLayers();
+            createClouds();
+            createAurora();
+            createMeteorShower();
+            spawnAirspaceObjects();
+
+            // Window resize handler
+            window.addEventListener('resize', onWindowResize, false);
+            // Raycasting for interactive selection
+            window.addEventListener('pointerdown', onDocumentPointerDown, false);
+        }
+
+        // Procedural Starfield
+        function createStarfield() {
+            const starsCount = 2000;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(starsCount * 3);
+            const colors = new Float32Array(starsCount * 3);
+
+            for (let i = 0; i < starsCount * 3; i += 3) {
+                const r = 200 + Math.random() * 200;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos((Math.random() * 2) - 1);
+
+                positions[i] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i + 1] = r * Math.sin(phi) * Math.sin(theta);
+                positions[i + 2] = r * Math.cos(phi);
+
+                const c = 0.8 + Math.random() * 0.2;
+                colors[i] = c;
+                colors[i + 1] = c * 0.95;
+                colors[i + 2] = 1.0;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 1.2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            const starfield = new THREE.Points(geometry, material);
+            scene.add(starfield);
+        }
+
+        // Procedural Earth Texture Generator
+        function generateEarthTextures() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 2048;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+
+            // Deep ocean base
+            const oceanGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            oceanGrad.addColorStop(0, '#04172e');
+            oceanGrad.addColorStop(0.5, '#0b294d');
+            oceanGrad.addColorStop(1, '#04172e');
+            ctx.fillStyle = oceanGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Procedural landmass blobs & continents
+            ctx.fillStyle = '#1c4d38';
+            for (let i = 0; i < 90; i++) {
+                const cx = Math.random() * canvas.width;
+                const cy = 200 + Math.random() * (canvas.height - 400);
+                const rx = 80 + Math.random() * 220;
+                const ry = 40 + Math.random() * 140;
+
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+                ctx.fill();
+
+                // mountain/desert highlights inside
+                ctx.fillStyle = '#556338';
+                ctx.beginPath();
+                ctx.ellipse(cx + 20, cy - 10, rx * 0.5, ry * 0.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#1c4d38';
+            }
+
+            // Ice caps at north & south poles
+            ctx.fillStyle = '#e2f1f8';
+            ctx.beginPath();
+            ctx.ellipse(canvas.width / 2, 20, canvas.width * 0.6, 75, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(canvas.width / 2, canvas.height - 20, canvas.width * 0.6, 75, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Latitude and Longitude Grid Lines (Sci-Fi Observation Look)
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+            ctx.lineWidth = 1;
+            for (let y = 0; y <= canvas.height; y += 64) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            for (let x = 0; x <= canvas.width; x += 128) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        // Earth Sphere Mesh
+        function createEarth() {
+            const geometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+            const earthTexture = generateEarthTextures();
+
+            const material = new THREE.MeshStandardMaterial({
+                map: earthTexture,
+                roughness: 0.65,
+                metalness: 0.1,
+                bumpScale: 0.05
+            });
+
+            earthMesh = new THREE.Mesh(geometry, material);
+            scene.add(earthMesh);
+        }
+
+        // Atmospheric Layers as Concentric Glowing Spheres
+        const layerMeshes = {};
+        function createAtmosphereLayers() {
+            ATMOSPHERE_LAYERS.forEach(layer => {
+                const geom = new THREE.SphereGeometry(EARTH_RADIUS * layer.radiusScale, 48, 48);
+                const mat = new THREE.MeshPhongMaterial({
+                    color: layer.color,
+                    transparent: true,
+                    opacity: layer.opacity,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending,
+                    wireframe: false,
+                    depthWrite: false
+                });
+
+                const mesh = new THREE.Mesh(geom, mat);
+                atmosphereGroup.add(mesh);
+                layerMeshes[layer.id] = mesh;
+
+                // Add wireframe ring guide for aesthetic sci-fi boundaries
+                const ringGeom = new THREE.RingGeometry(EARTH_RADIUS * layer.radiusScale - 0.02, EARTH_RADIUS * layer.radiusScale + 0.02, 64);
+                const ringMat = new THREE.MeshBasicMaterial({
+                    color: layer.color,
+                    transparent: true,
+                    opacity: 0.25,
+                    side: THREE.DoubleSide
+                });
+                const equatorRing = new THREE.Mesh(ringGeom, ringMat);
+                equatorRing.rotation.x = Math.PI / 2;
+                atmosphereGroup.add(equatorRing);
+            });
+        }
+
+        // Atmospheric Clouds Layer
+        function createClouds() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0,0,0,0)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Paint random white cloud streaks
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            for (let i = 0; i < 70; i++) {
+                const cx = Math.random() * canvas.width;
+                const cy = 60 + Math.random() * (canvas.height - 120);
+                const r = 25 + Math.random() * 60;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            const cloudTex = new THREE.CanvasTexture(canvas);
+            const geom = new THREE.SphereGeometry(EARTH_RADIUS * 1.025, 48, 48);
+            const mat = new THREE.MeshStandardMaterial({
+                map: cloudTex,
+                transparent: true,
+                opacity: 0.55,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            cloudsMesh = new THREE.Mesh(geom, mat);
+            scene.add(cloudsMesh);
+        }
+
+        // Aurora Borealis (Thermosphere Phenomenon)
+        function createAurora() {
+            const geom = new THREE.TorusGeometry(EARTH_RADIUS * 0.72, 0.45, 16, 100);
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0x10b981,
+                transparent: true,
+                opacity: 0.55,
+                blending: THREE.AdditiveBlending,
+                wireframe: true
+            });
+            auroraMesh = new THREE.Mesh(geom, mat);
+            auroraMesh.rotation.x = Math.PI / 2;
+            auroraMesh.position.y = EARTH_RADIUS * 0.95;
+            scene.add(auroraMesh);
+        }
+
+        // Shooting Stars / Meteors in Mesosphere (50-85 km)
+        const meteors = [];
+        function createMeteorShower() {
+            for (let i = 0; i < 15; i++) {
+                const geom = new THREE.CylinderGeometry(0.02, 0.12, 1.8, 6);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const meteor = new THREE.Mesh(geom, mat);
+                resetMeteorPosition(meteor);
+                meteorsGroup.add(meteor);
+                meteors.push(meteor);
+            }
+        }
+
+        function resetMeteorPosition(meteor) {
+            const alt = EARTH_RADIUS * (1.28 + Math.random() * 0.12); // Mesosphere
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+
+            meteor.position.set(
+                alt * Math.sin(phi) * Math.cos(theta),
+                alt * Math.cos(phi),
+                alt * Math.sin(phi) * Math.sin(theta)
+            );
+
+            meteor.lookAt(0, 0, 0);
+            meteor.rotateX(Math.PI / 2);
+            meteor.userData = {
+                speed: 0.1 + Math.random() * 0.2,
+                life: Math.random() * 80
+            };
+        }
+
+        // --- 4. Simulated Flying Objects & Satellite Traffic ---
+        function createOrbitPathLine(radius, color = 0x38bdf8) {
+            const points = [];
+            const segments = 90;
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                points.push(new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.35 });
+            const line = new THREE.Line(geometry, material);
+            orbitPathsGroup.add(line);
+            return line;
+        }
+
+        function spawnAirspaceObjects() {
+            // Sample Aircraft (Troposphere: 0-12 km)
+            const airlineNames = [
+                'Boeing 787-9 (ئۇچۇش CZ-6885)',
+                'Airbus A350 (ئۈرۈمچى - ئىستانبۇل)',
+                'Boeing 777F (يۈك تىرانسپورتى)',
+                'Airbus A320neo (ئىچكى پەرۋاز)',
+                'Gulfstream G650 (مەخسۇس گۇرۇپپا)'
+            ];
+
+            for (let i = 0; i < 9; i++) {
+                const alt = EARTH_RADIUS * (1.02 + Math.random() * 0.03); // Troposphere
+                const obj = createTrackedEntity({
+                    id: 'flight_' + i,
+                    name: airlineNames[i % airlineNames.length] + ' #' + (100 + i),
+                    layer: 'تۆۋەنكى ھاۋا قەۋىتى (Troposphere)',
+                    layerId: 'troposphere',
+                    category: 'CIVIL_FLIGHT',
+                    icon: 'fa-plane',
+                    altitudeKm: (9.5 + Math.random() * 2.5).toFixed(1) + ' km',
+                    speedKmh: Math.floor(840 + Math.random() * 120) + ' km/h',
+                    status: 'نورمال لىنىيەدە',
+                    altitudeRadius: alt,
+                    orbitSpeed: 0.0007 + Math.random() * 0.0004,
+                    inclination: (Math.random() - 0.5) * 1.2,
+                    color: 0x38bdf8,
+                    size: 0.35
+                });
+                trackedObjects.push(obj);
+            }
+
+            // High Altitude Weather Balloons & Supersonic (Stratosphere: 12-50 km)
+            for (let i = 0; i < 4; i++) {
+                const alt = EARTH_RADIUS * (1.12 + Math.random() * 0.08); // Stratosphere
+                const isBalloon = i % 2 === 0;
+                const obj = createTrackedEntity({
+                    id: 'strat_' + i,
+                    name: isBalloon ? 'NOAA مېتېئورولوگىيە شارى S-' + (21 + i) : 'SR-71 سىناق ئۇچقۇسى M-' + i,
+                    layer: 'ستراتوسفېرا قەۋىتى (Stratosphere)',
+                    layerId: 'stratosphere',
+                    category: isBalloon ? 'METEO_BALLOON' : 'SUPERSONIC',
+                    icon: isBalloon ? 'fa-cloud-meatball' : 'fa-jet-fighter',
+                    altitudeKm: (22 + Math.random() * 18).toFixed(1) + ' km',
+                    speedKmh: isBalloon ? '45 km/h' : '3,200 km/h (Mach 3.1)',
+                    status: isBalloon ? 'ھاۋا رايى تەكشۈرمەكتە' : 'سىناق پەرۋازىدا',
+                    altitudeRadius: alt,
+                    orbitSpeed: isBalloon ? 0.00015 : 0.0018,
+                    inclination: (Math.random() - 0.5) * 1.5,
+                    color: 0x60a5fa,
+                    size: 0.38
+                });
+                trackedObjects.push(obj);
+            }
+
+            // ISS (Thermosphere: 400-420 km)
+            const iss = createTrackedEntity({
+                id: 'iss_core',
+                name: 'خەلقئارا ئالەم پونكىتى (ISS)',
+                layer: 'ئىسسىقلىق قەۋىتى (Thermosphere)',
+                layerId: 'thermosphere',
+                category: 'SPACE_STATION',
+                icon: 'fa-shuttle-space',
+                altitudeKm: '418.5 km',
+                speedKmh: '27,600 km/h (7.66 km/s)',
+                status: 'ئوربىتا نورمال، ئالاقە تولۇق',
+                altitudeRadius: EARTH_RADIUS * 1.48,
+                orbitSpeed: 0.0022,
+                inclination: 0.89, // ISS orbital inclination ~51.6 degrees
+                color: 0xf59e0b,
+                size: 0.65
+            });
+            trackedObjects.push(iss);
+            createOrbitPathLine(EARTH_RADIUS * 1.48, 0xf59e0b);
+
+            // Satellites (Exosphere: 600km+)
+            const satelliteNames = [
+                'Starlink V2 لىنىيەسى #1420',
+                'Landsat-9 يەر شارىنى كۆزىتىش',
+                'مېتېئورولوگىيە سۈنئىي ھەمراھى FY-4B',
+                'Hubble ئالەم تېلېسكوپى',
+                'GPS NAVSTAR سۈنئىي ھەمراھى B-II',
+                'Beidou BDS-3 يەرشارى ئورۇن بەلگىلەش'
+            ];
+
+            satelliteNames.forEach((name, idx) => {
+                const alt = EARTH_RADIUS * (1.68 + idx * 0.06);
+                const sat = createTrackedEntity({
+                    id: 'sat_' + idx,
+                    name: name,
+                    layer: 'تاشقى بوشلۇق قەۋىتى (Exosphere)',
+                    layerId: 'exosphere',
+                    category: 'SATELLITE',
+                    icon: 'fa-satellite',
+                    altitudeKm: (650 + idx * 280).toFixed(0) + ' km',
+                    speedKmh: (26000 - idx * 800).toFixed(0) + ' km/h',
+                    status: 'پائال مەشغۇلاتتا',
+                    altitudeRadius: alt,
+                    orbitSpeed: 0.0012 + idx * 0.0003,
+                    inclination: (Math.random() - 0.5) * 2.2,
+                    color: 0xec4899,
+                    size: 0.45
+                });
+                trackedObjects.push(sat);
+                createOrbitPathLine(alt, 0xec4899);
+            });
+
+            // Set default selected target to ISS
+            selectTarget(iss);
+        }
+
+        // Entity Visual Construction (Mesh with Glowing Halo)
+        function createTrackedEntity(data) {
+            const group = new THREE.Group();
+
+            // Core 3D Model Marker
+            let coreGeom;
+            if (data.category === 'SPACE_STATION') {
+                coreGeom = new THREE.BoxGeometry(data.size, data.size * 0.4, data.size * 1.8);
+            } else if (data.category === 'SATELLITE') {
+                coreGeom = new THREE.OctahedronGeometry(data.size * 0.65);
+            } else {
+                coreGeom = new THREE.ConeGeometry(data.size * 0.45, data.size * 1.2, 5);
+            }
+
+            const coreMat = new THREE.MeshBasicMaterial({ color: data.color });
+            const coreMesh = new THREE.Mesh(coreGeom, coreMat);
+            group.add(coreMesh);
+
+            // Glowing Indicator ring
+            const haloGeom = new THREE.RingGeometry(data.size * 0.8, data.size * 1.15, 18);
+            const haloMat = new THREE.MeshBasicMaterial({
+                color: data.color,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.7
+            });
+            const haloMesh = new THREE.Mesh(haloGeom, haloMat);
+            group.add(haloMesh);
+
+            // User metadata attachment
+            group.userData = {
+                ...data,
+                angle: Math.random() * Math.PI * 2,
+                haloMesh: haloMesh
+            };
+
+            objectsGroup.add(group);
+            return group;
+        }
+
+        // Update positions of entities along their spherical orbits
+        function updateObjectsPositions() {
+            trackedObjects.forEach(obj => {
+                const d = obj.userData;
+                d.angle += d.orbitSpeed;
+
+                const r = d.altitudeRadius;
+                const inc = d.inclination;
+
+                // Spherical coordinate orbital calculation
+                const x = r * Math.cos(d.angle);
+                const z = r * Math.sin(d.angle) * Math.cos(inc);
+                const y = r * Math.sin(d.angle) * Math.sin(inc);
+
+                obj.position.set(x, y, z);
+                obj.userData.haloMesh.lookAt(camera.position);
+
+                // Check layer visibility
+                const layer = ATMOSPHERE_LAYERS.find(l => l.id === d.layerId);
+                if (layer) {
+                    obj.visible = layer.visible;
+                }
+            });
+        }
+
+        // --- 5. Interactive Raycasting & Selection ---
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        function onDocumentPointerDown(event) {
+            // Ignore if clicked on UI cards
+            if (event.target.closest('aside, header, footer, button, input')) return;
+
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+            const clickableChildren = [];
+            objectsGroup.traverse(child => {
+                if (child.isMesh) clickableChildren.push(child);
+            });
+
+            const intersects = raycaster.intersectObjects(clickableChildren, false);
+            if (intersects.length > 0) {
+                let targetParent = intersects[0].object.parent;
+                while (targetParent && !targetParent.userData.id) {
+                    targetParent = targetParent.parent;
+                }
+                if (targetParent && targetParent.userData.id) {
+                    selectTarget(targetParent);
+                    playSelectionSound();
+                }
+            }
+        }
+
+        function selectTarget(objGroup) {
+            selectedObject = objGroup;
+            const data = objGroup.userData;
+
+            // Update UI elements
+            document.getElementById('target-name').innerText = data.name;
+            document.getElementById('target-layer').innerText = data.layer;
+            document.getElementById('target-alt').innerText = data.altitudeKm;
+            document.getElementById('target-spd').innerText = data.speedKmh;
+            document.getElementById('target-status').innerText = data.status;
+
+            // Calculate simulated coordinates based on world position
+            const normPos = objGroup.position.clone().normalize();
+            const lat = (Math.asin(normPos.y) * 180 / Math.PI).toFixed(1);
+            const lon = (Math.atan2(normPos.z, normPos.x) * 180 / Math.PI).toFixed(1);
+            document.getElementById('target-coords').innerText = `${Math.abs(lat)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon)}°${lon >= 0 ? 'E' : 'W'}`;
+
+            // Update badge & icon
+            const badge = document.getElementById('target-badge');
+            const iconWrap = document.getElementById('target-icon-wrap');
+            badge.innerText = data.category;
+            iconWrap.innerHTML = `<i class="fa-solid ${data.icon}"></i>`;
+
+            // Highlight ring pulse
+            trackedObjects.forEach(o => {
+                o.userData.haloMesh.material.color.set(o.userData.color);
+                o.userData.haloMesh.scale.set(1, 1, 1);
+            });
+            data.haloMesh.material.color.set(0x22d3ee);
+            data.haloMesh.scale.set(1.5, 1.5, 1.5);
+        }
+
+        function focusSelectedObject() {
+            if (!selectedObject) return;
+            const targetPos = selectedObject.position.clone();
+            const offset = targetPos.clone().normalize().multiplyScalar(4.5);
+            const camDest = targetPos.clone().add(offset);
+
+            // Smooth tween
+            animateCameraTo(camDest, targetPos);
+            playRadarBeep(1100, 0.1);
+        }
+
+        function resetCamera() {
+            animateCameraTo(new THREE.Vector3(0, 18, 38), new THREE.Vector3(0, 0, 0));
+        }
+
+        function zoomToAltitude(scale) {
+            const currentDir = camera.position.clone().normalize();
+            const dist = EARTH_RADIUS * scale * 1.55;
+            animateCameraTo(currentDir.multiplyScalar(dist), new THREE.Vector3(0, 0, 0));
+            playRadarBeep(720, 0.08);
+        }
+
+        function animateCameraTo(targetCamPos, targetControlsLookAt) {
+            const startCamPos = camera.position.clone();
+            const startLookAt = controls.target.clone();
+            let progress = 0;
+
+            function step() {
+                progress += 0.045;
+                if (progress <= 1) {
+                    camera.position.lerpVectors(startCamPos, targetCamPos, progress);
+                    controls.target.lerpVectors(startLookAt, targetControlsLookAt, progress);
+                    controls.update();
+                    requestAnimationFrame(step);
+                } else {
+                    camera.position.copy(targetCamPos);
+                    controls.target.copy(targetControlsLookAt);
+                    controls.update();
+                }
+            }
+            step();
+        }
+
+        // --- 6. Atmospheric Phenomena & Layer Controls ---
+        function toggleLayer(layerId) {
+            const layer = ATMOSPHERE_LAYERS.find(l => l.id === layerId);
+            if (!layer) return;
+            layer.visible = !layer.visible;
+            if (layerMeshes[layerId]) {
+                layerMeshes[layerId].visible = layer.visible;
+            }
+            renderLayerUI();
+            playRadarBeep(600, 0.06);
+        }
+
+        function togglePhenomenon(type) {
+            const btn = document.getElementById('toggle-' + type);
+            if (type === 'aurora') {
+                auroraMesh.visible = !auroraMesh.visible;
+                updateButtonState(btn, auroraMesh.visible);
+            } else if (type === 'meteors') {
+                meteorsGroup.visible = !meteorsGroup.visible;
+                updateButtonState(btn, meteorsGroup.visible);
+            } else if (type === 'clouds') {
+                cloudsMesh.visible = !cloudsMesh.visible;
+                updateButtonState(btn, cloudsMesh.visible);
+            } else if (type === 'orbits') {
+                orbitPathsGroup.visible = !orbitPathsGroup.visible;
+                updateButtonState(btn, orbitPathsGroup.visible);
+            }
+            playRadarBeep(520, 0.05);
+        }
+
+        function updateButtonState(btn, isActive) {
+            if (isActive) {
+                btn.className = "glass-panel px-2.5 py-2 rounded-xl text-slate-300 hover:text-cyan-300 flex items-center justify-between transition-colors border-emerald-500/40 bg-emerald-950/20";
+                btn.querySelector('i').className = "fa-solid fa-check text-emerald-400 text-[10px]";
+            } else {
+                btn.className = "glass-panel px-2.5 py-2 rounded-xl text-slate-400 flex items-center justify-between transition-colors opacity-60";
+                btn.querySelector('i').className = "fa-solid fa-xmark text-slate-500 text-[10px]";
+            }
+        }
+
+        function updateSunAngle(degrees) {
+            const rad = degrees * Math.PI / 180;
+            const dist = 50;
+            sunLight.position.set(Math.cos(rad) * dist, 12, Math.sin(rad) * dist);
+
+            // Compute hour label
+            const hours = Math.floor((degrees / 360) * 24);
+            const mins = '00';
+            let label = `${hours.toString().padStart(2, '0')}:${mins} `;
+            if (hours >= 6 && hours < 12) label += '(سەھەر / ئەتىگەن)';
+            else if (hours >= 12 && hours < 18) label += '(كۈندۈز)';
+            else if (hours >= 18 && hours < 21) label += '(شام ۋاقتى)';
+            else label += '(كېچە)';
+            document.getElementById('sun-time-label').innerText = label;
+        }
+
+        // Populate Dynamic Layer List in Uyghur
+        function renderLayerUI() {
+            const container = document.getElementById('layers-container');
+            container.innerHTML = '';
+
+            ATMOSPHERE_LAYERS.forEach(layer => {
+                const item = document.createElement('div');
+                item.className = `p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    layer.visible 
+                        ? 'bg-slate-900/60 border-cyan-500/30' 
+                        : 'bg-slate-950/30 border-slate-800 opacity-60'
+                }`;
+                item.onclick = () => toggleLayer(layer.id);
+
+                item.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full ${layer.badgeColor}"></span>
+                            <span class="font-bold text-slate-200 text-xs">${layer.name}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono-hud text-[10px] text-cyan-400">${layer.altitude}</span>
+                            <i class="fa-solid ${layer.visible ? 'fa-eye text-cyan-400' : 'fa-eye-slash text-slate-600'} text-xs"></i>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-1 leading-relaxed">${layer.desc}</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // Radar Blip Generation in 2D Screen Space
+        function updateRadarBlips() {
+            const blipBox = document.getElementById('radar-blips-container');
+            blipBox.innerHTML = '';
+
+            // Pick 5 visible objects to show on 2D circular radar
+            trackedObjects.slice(0, 7).forEach(obj => {
+                const normPos = obj.position.clone().normalize();
+                const u = (normPos.x * 0.42 + 0.5) * 100;
+                const v = (normPos.z * 0.42 + 0.5) * 100;
+
+                const blip = document.createElement('div');
+                blip.className = 'absolute w-1.5 h-1.5 rounded-full bg-cyan-400 -translate-x-1/2 -translate-y-1/2 shadow-[0_0_6px_#22d3ee] animate-pulse';
+                blip.style.left = `${u}%`;
+                blip.style.top = `${v}%`;
+                blipBox.appendChild(blip);
+            });
+        }
+
+        // Clock & Periodical Radar Audio Beep
+        function startTelemetryClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('utc-clock').innerText = now.toUTCString().slice(17, 25) + ' UTC';
+            }, 1000);
+
+            // Periodic radar sound ping every 4.5 seconds (synced with radar rotation)
+            setInterval(() => {
+                if (soundEnabled) {
+                    playRadarBeep(1200, 0.06);
+                }
+                updateRadarBlips();
+            }, 4500);
+        }
+
+        // Resize handler
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- 7. Main Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Earth slow self-rotation
+            if (earthMesh) earthMesh.rotation.y += 0.0004;
+            if (cloudsMesh) cloudsMesh.rotation.y += 0.0006;
+            if (auroraMesh) auroraMesh.rotation.z += 0.002;
+
+            // Animate Meteors in Mesosphere
+            meteors.forEach(m => {
+                m.translateZ(-m.userData.speed);
+                m.userData.life -= 1;
+                if (m.userData.life <= 0) {
+                    resetMeteorPosition(m);
+                }
+            });
+
+            // Update Tracked Objects
+            updateObjectsPositions();
+
+            // OrbitControls update
+            controls.update();
+
+            // Render Frame
+            renderer.render(scene, camera);
+        }
+
+        // Initialize App on Window Load
+        window.onload = function () {
+            initThree();
+            renderLayerUI();
+            updateSunAngle(75);
+            startTelemetryClock();
+            updateRadarBlips();
+            animate();
+        };
+    </script>
+</body>
+</html>
